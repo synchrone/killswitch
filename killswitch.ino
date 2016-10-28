@@ -1,9 +1,14 @@
+#include <Keyboard.h>
+#include <Bounce2.h>
 #include <EEPROM.h>
 #include <avr/pgmspace.h>
 
 #define LLED 13
 #define PINS 1
 static const uint8_t pins[] = {9, 10, 11}; // 3 digital pins. See also A0, A1, A2
+
+#define DEBOUNCE_TIME 50
+static Bounce debouncers[PINS];
 
 #define SHCUT_SIZE 10 //Shortcut buffer size. 1 per simultaneous key, 1 for pause
 #define ASCII_RS 0x30 //ASCII Record Separator, indicates a 100ms pause
@@ -16,7 +21,6 @@ typedef struct KeymapAssignEvent {
   char shortcut[SHCUT_SIZE];
 } KeymapAssignEvent;
 KeymapAssignEvent currentKMAEvent;
-
 
 #define SIZEOF_CRC sizeof(unsigned long)
 int eepromAddr(int pin, int chr) {
@@ -65,7 +69,6 @@ boolean checkEeprom() {
   Serial.println("#Checking EEPROM. StoredCRC: " + String(storedCrc) + ", CalculatedCRC: " + calculatedCrc);
   return storedCrc  == calculatedCrc;
 }
-
 boolean updateEepromKeymap(int pin) {
   if(pin < 0){
     for(int i = 0; i < PINS; i++){
@@ -81,7 +84,6 @@ boolean updateEepromKeymap(int pin) {
   writeEepromCrc(computeEepromCrc());
   return checkEeprom();
 }
-
 void loadEepromKeymap() {
   for (int i = 0; i < PINS; i++) {
     Serial.print("#Read from EEPROM for pin #"+String(i)+": ");
@@ -101,7 +103,6 @@ void loadPrebuiltKeymap(){
     strcpy_P(keyMap[i], (char*)pgm_read_word(&(defaultKeyMap[i])));
   }
 }
-
 void updateKeymap() {
   Serial.println("# Updating keymap for pin " + String(currentKMAEvent.pin) + ": " + String(currentKMAEvent.shortcut[currentKMAEvent.pin]));
   
@@ -112,7 +113,6 @@ void updateKeymap() {
     Serial.println("FAIL");
   }
 }
-
 boolean receiveSerialKeymap() {
   //cleanup buffer
   char buffer[SHCUT_SIZE + 1];
@@ -151,6 +151,9 @@ void setupPins() {
   Serial.println("#Setting " + String(PINS) + " pins to INPUT_PULLUP");
   for (int i = 0; i < PINS; i++) {
     pinMode(pins[i], INPUT_PULLUP);
+    debouncers[i] = Bounce();
+    debouncers[i].attach(pins[i]);
+    debouncers[i].interval(DEBOUNCE_TIME);
   }
 }
 boolean allPinsDown(){
@@ -186,9 +189,11 @@ void loop() {
     updateKeymap();
   }
   
-  digitalWrite(LLED, HIGH); 
   for (int i = 0; i < PINS; i++) {
-    if (digitalRead(pins[i]) == LOW) { //TODO Debounce button
+    debouncers[i].update();
+    
+    if (debouncers[i].fell()) {
+      
       for (int j = 0; j < SHCUT_SIZE; j++) {
         char keyCode = keyMap[i][j];
         Serial.print("#0x");Serial.print(keyCode, HEX);Serial.print(' ');
@@ -201,9 +206,11 @@ void loop() {
           Keyboard.press(keyCode);
         }
       }
-      delay(100);
+      Serial.print("\n");
+      
+    }else if(debouncers[i].rose()){
       Keyboard.releaseAll();
+      Serial.print("#Released all keys\n"); 
     }
   }
-  digitalWrite(LLED, LOW); 
 }
