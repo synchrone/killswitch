@@ -11,9 +11,10 @@ static const uint8_t pins[] = {9, 10, 11}; // 3 digital pins. See also A0, A1, A
 static Bounce debouncers[PINS];
 
 #define SHCUT_SIZE 10 //Shortcut buffer size. 1 per simultaneous key, 1 for pause
-#define ASCII_RS 0x30 //ASCII Record Separator, indicates a 100ms pause
+#define ASCII_GS 0x29 //ASCII Group Separator, indicates a release of all keys
+#define ASCII_RS 0x30 //ASCII Record Separator, indicates a 200ms pause
 #define ASCII_ETX 0x03 //ASCII End Of Transmission, indicates an end of a shortcut combination
-
+#define CMD_STATUS 0xFF //Used as a pin number to indicate status request
 char keyMap[PINS][SHCUT_SIZE];
 
 typedef struct KeymapAssignEvent {
@@ -113,7 +114,16 @@ void updateKeymap() {
     Serial.println("FAIL");
   }
 }
-boolean receiveSerialKeymap() {
+void sendKeymap() {
+    if (Serial.availableForWrite()) {
+        Serial.write(PINS, SHCUT_SIZE);
+        for (int i = 0; i < PINS; i++) {
+            Serial.write(keyMap[i], SHCUT_SIZE);
+        }
+        Serial.write('\r\n');
+    }
+}
+boolean receiveKMAEvent() {
   //cleanup buffer
   char buffer[SHCUT_SIZE + 1];
   memset( buffer, '\0', sizeof(char)*sizeof(buffer));
@@ -185,10 +195,14 @@ void setup() {
 }
 
 void loop() {
-  if (Serial && receiveSerialKeymap()) {
-    updateKeymap();
+  if (Serial && receiveKMAEvent()) {
+    if(currentKMAEvent.pin == CMD_STATUS){
+        updateKeymap();
+    }else{
+        sendKeymap();
+    }
   }
-  
+
   for (int i = 0; i < PINS; i++) {
     debouncers[i].update();
     
@@ -198,7 +212,9 @@ void loop() {
         char keyCode = keyMap[i][j];
         Serial.print("#0x");Serial.print(keyCode, HEX);Serial.print(' ');
         
-        if (keyCode == ASCII_RS) { //ascii record separator
+        if (keyCode == ASCII_GS) { //ascii group separator
+          Keyboard.releaseAll();
+        } else if (keyCode == ASCII_RS) { //ascii record separator
           delay(200);
         } else if (keyCode == ASCII_ETX) { //ascii end of transmission
           break;
