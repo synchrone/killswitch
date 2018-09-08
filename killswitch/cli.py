@@ -7,9 +7,8 @@ from killswitch.keys import Key
 @click.command()
 @click.option('--dev', help='Virtual COM port name for communication')
 def status(dev):
-    print(Device(dev).status())
-    #TODO: request pin count, shourtcut buffer size, and current mappings
-    #TODO: use device config in validation
+    for n, c in enumerate(Device(dev).status()):
+        print('Button #{}: {}'.format(n, str(c)))
 
 
 @click.command()
@@ -25,9 +24,21 @@ def program(dev, pin, keys):
     print('Device response: '+response)
 
 
+@click.command()
+def keys():
+    print('All ASCII characters, plus special keys:')
+    for k in Key:
+        print(k.name)
+
+
 @click.group()
 def main():
     pass
 
+
 main.add_command(status)
 main.add_command(program)
+main.add_command(keys)
+
+if __name__ == '__main__':
+    main()
