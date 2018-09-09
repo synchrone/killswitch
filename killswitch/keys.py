@@ -1,6 +1,6 @@
 from enum import Enum
 
-ASCII_EOT = 0x03
+ASCII_ETX = 0x03
 ASCII_GS = 0x29
 ASCII_RS = 0x30
 
@@ -44,9 +44,9 @@ class Key(Enum):
     F12 = 0xCD
 
     # Killswitch Control Chars
-    PAUSE = ASCII_RS
-    END_OF_SHORTCUT = ASCII_EOT
-    RELEASE_ALL_KEYS = ASCII_GS
+    PAUSE = ASCII_RS             # ASCII Record Separator indicates a 200ms pause in the combination
+    END_OF_SHORTCUT = ASCII_ETX  # ASCII End Of Text, indicates the end of shortcut combination
+    RELEASE_ALL_KEYS = ASCII_GS  # ASCII Group Separator, indicates release-all-keys
 
     def __int__(self):
         return self.value
@@ -56,7 +56,13 @@ class Key(Enum):
 
     @staticmethod
     def lookup(key):
-        try:
-            return Key[key]
-        except KeyError:
-            return None
+        if isinstance(key, int):
+            try:
+                return Key(key)
+            except ValueError:
+                return None
+        elif isinstance(key, str) and len(key) > 1:
+            try:
+                return Key[key]
+            except KeyError:
+                return None

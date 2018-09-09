@@ -4,28 +4,27 @@ from serial.tools.list_ports import comports
 
 from killswitch.keys import Key
 
-CMD_STATUS = 0xFF
+CMD_STATUS = 0xFE
 
 
 class Combination(object):
     def __init__(self, *args):
         self.buffer = list()
         for keypress in args:
-            self.add(keypress)
+            if keypress != 0x00:
+                self.add(keypress)
 
     def add(self, buffer):
-        if type(buffer) == str and Key.lookup(buffer):
-            buffer = Key[buffer]
+        lookup = Key.lookup(buffer)
+        buffer = lookup if lookup else buffer
 
-        if type(buffer) == Key or (type(buffer) == int and chr(buffer) in string.printable):
+        if isinstance(buffer, Key) or (isinstance(buffer, int) and chr(buffer) in string.printable):
             return self.buffer.append(buffer)
-        if type(buffer) == str and len(buffer) == 1:
-            return self.buffer.append(ord(buffer))
 
         raise ValueError('Only a character or a one-byte integer is allowed as a Key, not %s' % type(buffer))
 
     def to_hex(self):
-        return list(map(int, self.buffer)) + [keys.ASCII_EOT]
+        return list(map(int, self.buffer)) + [Key.END_OF_SHORTCUT.value]
 
     def __str__(self):
         shortcut_str = ''
@@ -35,8 +34,10 @@ class Combination(object):
             elif k in [Key.END_OF_SHORTCUT, Key.PAUSE]:
                 continue
             else:
-                shortcut_str += (len(shortcut_str) > 0 and '+' or '')
-                if type(k) is Key:
+                if len(shortcut_str) > 0:
+                    shortcut_str += '+'
+
+                if isinstance(k, Key):
                     shortcut_str += str(k)
                 else:
                     shortcut_str += chr(k)
@@ -64,14 +65,14 @@ class Device(object):
         return devs[0].device
 
     def status(self):
-        self.send(CMD_STATUS)
+        self.send(bytearray([CMD_STATUS, keys.ASCII_ETX]))
         r = self.get_response()
         pincount, shortcut_size = map(int, r[:2])
         shortcuts = r[2:]
 
         combinations = []
-        for i in range(1, pincount+1):
-            buffer = shortcuts[:i*shortcut_size]
+        for i in range(0, pincount):
+            buffer = shortcuts[i*shortcut_size: (i+1)*shortcut_size]
             combinations.append(Combination(*buffer))
 
         return combinations
@@ -90,6 +91,7 @@ class Device(object):
     def get_response(self):
         line = self.get_response_line()
         while line[0] == ord('#'):
+            # print(line)
             line = self.get_response_line()
         return line.strip(b'\r\n')
 

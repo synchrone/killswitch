@@ -5,7 +5,7 @@
 
 #define LLED 13
 #define PINS 1
-static const uint8_t pins[] = {9, 10, 11}; // 3 digital pins. See also A0, A1, A2
+static const uint8_t pins[] = {9}; //{9, 10, 11}; // 3 digital pins. See also A0, A1, A2
 
 #define DEBOUNCE_TIME 50
 static Bounce debouncers[PINS];
@@ -13,8 +13,10 @@ static Bounce debouncers[PINS];
 #define SHCUT_SIZE 10 //Shortcut buffer size. 1 per simultaneous key, 1 for pause
 #define ASCII_GS 0x29 //ASCII Group Separator, indicates a release of all keys
 #define ASCII_RS 0x30 //ASCII Record Separator, indicates a 200ms pause
-#define ASCII_ETX 0x03 //ASCII End Of Transmission, indicates an end of a shortcut combination
-#define CMD_STATUS 0xFF //Used as a pin number to indicate status request
+#define ASCII_ETX 0x03 //ASCII End Of Text, indicates an end of a shortcut combination
+
+#define CMD_STATUS 0xFE //Used as a pin number to indicate status request
+#define CMD_PIN_UNSET 0xFF
 char keyMap[PINS][SHCUT_SIZE];
 
 typedef struct KeymapAssignEvent {
@@ -95,7 +97,7 @@ void loadEepromKeymap() {
   }
 }
 
-const char defaultShortcut1[] PROGMEM = {KEY_LEFT_CTRL, KEY_LEFT_ALT, ASCII_RS, 'l', ASCII_ETX};
+const char defaultShortcut1[] PROGMEM = {(char)KEY_LEFT_CTRL, (char)KEY_LEFT_ALT, ASCII_RS, 'l', ASCII_ETX};
 const char* const defaultKeyMap[] PROGMEM = {defaultShortcut1};
 void loadPrebuiltKeymap(){
   Serial.println("#Loading shortcuts from precompiled defaults");
@@ -116,11 +118,12 @@ void updateKeymap() {
 }
 void sendKeymap() {
     if (Serial.availableForWrite()) {
-        Serial.write(PINS, SHCUT_SIZE);
+        Serial.write(PINS);
+        Serial.write(SHCUT_SIZE);
         for (int i = 0; i < PINS; i++) {
             Serial.write(keyMap[i], SHCUT_SIZE);
         }
-        Serial.write('\r\n');
+        Serial.write("\r\n");
     }
 }
 boolean receiveKMAEvent() {
@@ -129,7 +132,7 @@ boolean receiveKMAEvent() {
   memset( buffer, '\0', sizeof(char)*sizeof(buffer));
 
   //cleanup global event struct
-  currentKMAEvent.pin = 255;
+  currentKMAEvent.pin = CMD_PIN_UNSET;  
   memset(&currentKMAEvent.shortcut, 0x00, sizeof(char) * sizeof(currentKMAEvent.shortcut));
 
   //flash led for serial reading (time-consuming)
@@ -142,12 +145,11 @@ boolean receiveKMAEvent() {
 
   if (bytesRead > 0) {
     Serial.println("#RCV(" + String(bytesRead) + "): " + String(buffer));
-    
-    currentKMAEvent.pin = (int)buffer[0];
+    memcpy(&currentKMAEvent.pin, &buffer[0], 1);
     memcpy(&currentKMAEvent.shortcut[0], &buffer[1], bytesRead - 1);
     currentKMAEvent.shortcut[bytesRead-1] = ASCII_ETX; //mark end of shortcut sequence
 
-    if (currentKMAEvent.pin < PINS) { //basic check against available pins
+    if (currentKMAEvent.pin == CMD_STATUS || currentKMAEvent.pin < PINS) { //basic check against available pins
       return true;
     } else {
       Serial.println("NoSuchPin " + String(currentKMAEvent.pin));
@@ -197,9 +199,9 @@ void setup() {
 void loop() {
   if (Serial && receiveKMAEvent()) {
     if(currentKMAEvent.pin == CMD_STATUS){
-        updateKeymap();
-    }else{
         sendKeymap();
+    }else{
+        updateKeymap();
     }
   }
 
